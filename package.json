@@ -1,0 +1,33 @@
+{
+  "name": "salo.js",
+  "version": "1.0.0",
+  "description": "salo.js allows you to use client-side storage for hits before they are successfully sent to Google Analytics",
+  "main": "./src/salo.js",
+  "keywords": [
+    "jquery",
+    "selector",
+    "element",
+    "dom"
+  ],
+  "author": "Vlad Mysla",
+  "license": "MIT",
+  "devDependencies": {
+    "browserify-istanbul": "^0.2.1",
+    "gulp-browserify": "^0.5.1",
+    "gulp-jasmine": "^2.0.1",
+    "gulp-rename": "^1.2.2",
+    "jasmine-core": "^2.3.4",
+    "jquery": "1.7.2",
+    "jquery-browserify": "^1.8.1",
+    "karma": "^0.12.37",
+    "karma-browserify": "^4.2.1",
+    "karma-coverage": "^0.4.2",
+    "karma-jasmine": "^0.3.6",
+    "karma-nyan-reporter": "^0.1.0",
+    "karma-phantomjs-launcher": "^0.2.0",
+    "phantomjs": "^1.9.17"
+  },
+  "dependencies": {
+    "simplestorage.js": "^0.1.3"
+  }
+}
