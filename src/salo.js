@@ -10,8 +10,14 @@ function salo(tracker, options){
 	var TIME_1_HOUR    = TIME_1_MINUTE * 60;
 	var TIME_3_HOURS   = TIME_1_HOUR   * 3;
 
+	var api = {
+		'enable'  : enable,
+		'disable' : disable,
+		'watch'	  : watch
+	}
+	
 	var patterns =  [{	
-		'useSalo'		: 1, 
+		'useSalo'		: true, 
 		'useBeacon'		: false,
 		'hitCallback'	: UNDEFINED, 
 		'transport'		: UNDEFINED 
@@ -19,6 +25,8 @@ function salo(tracker, options){
 
 	var inbox  = 0;
 	var outbox = 0;
+
+	options = options || {};
 
 	var storageTimeout   = options['storageTimeout']   || TIME_3_HOURS;
 	var transportTimeout = options['transportTimeout'] || TIME_5_SECONDS;
@@ -28,10 +36,28 @@ function salo(tracker, options){
 
 	var timing    = options['timing']       || window;
 	var storage   = options['storage']      || window['simpleStorage'];
-	var transport = options['sendHitTask']  || tracker.get('sendHitTask');
-	
-	tracker.set('sendHitTask', send);
+	var transport = tracker.get('sendHitTask');
 
+	enable();
+
+
+	function watch(pattern){ 
+		patterns.push(pattern);
+	}
+	
+	function enable(fn){ 
+		tracker.set('sendHitTask', fn || send);
+	}
+
+	function disable(error, fn){
+		enable(transport);
+		return error 
+			&& tracker.send('exception', {
+	        	'exDescription': 'salo.js - ' + fn + ':' + error.message, 
+	        	'nonInteraction': true,
+	        	'exFatal': false
+	    	});
+	}
 
 	function onSend(hit, savedId){
 
@@ -48,14 +74,18 @@ function salo(tracker, options){
 
 			var onSuccess = hit.get('hitCallback') || NOP;
 			
-			hit.set('hitCallback', function(){
-				if(timeout) timeout = timing.clearTimeout(timeout);
-				if(savedId) remove(savedId);
-				if(onSuccess){
-					onDone(true);
-					onSuccess();
-					onSuccess = UNDEFINED;
+			hit.set('hitCallback', function hitCallback(){
+				try {
+					if(timeout) timeout = timing.clearTimeout(timeout);
+					if(savedId) remove(savedId);
+					if(onSuccess) {
+						onDone(true);
+						onSuccess();	
+					}
+				} catch(e) {
+					disable(e, hitCallback);
 				}
+				onSuccess = UNDEFINED;
 			}, true); // for this hit only
 
 			inbox--;
@@ -71,7 +101,11 @@ function salo(tracker, options){
 	}
 
 	function send(hit, savedId){
-		onSend(hit, savedId);
+		try {
+			onSend(hit, savedId);
+		} catch(e) {
+			disable(e, send);
+		}
 	}
 
 	function canSave(hit){
@@ -162,6 +196,10 @@ function salo(tracker, options){
 	function ttl(time){
 		return { TTL : time };
 	}
+
+	return api;
 }
 
-module.exports = salo;
+if (typeof exports !== 'undefined') {
+        module.exports = salo;
+} 

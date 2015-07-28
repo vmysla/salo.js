@@ -5,7 +5,7 @@ describe('salo', function(){
 	var mockStorage = require('./mocks/mock-storage.js');
 	var mockHelper  = require('./helpers/mock-helper.js');	
 
-	var salo = require('../src/salo.js');
+	var salo = require('./../src/salo.js');
 	var test = mockHelper(salo, mockTiming, mockTracker, mockStorage);
 
 
@@ -101,6 +101,7 @@ describe('salo', function(){
 			expect( reported().all ).toBe("event/normal-1,event/salo-1", err('Both events were delivered'));
 		});
 
+
 		test(function(test, saved, reported, err){
 			test.send('event/normal-1');
 			expect( saved().len ).toBe(0, err('Normal should not be saved'));
@@ -185,7 +186,6 @@ describe('salo', function(){
 				expect( reported().all ).toBe('event/normal-1,event/salo-1,event/normal-2', err('Marked event should be sent when there is no normal events which are sent now'));
 		});	
 	});
-
 
 	it('should correctly handle reporting and expiration temeouts', function(){
 

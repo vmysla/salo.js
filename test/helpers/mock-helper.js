@@ -79,7 +79,8 @@ module.exports = function MockHelper_proxy(salo, MockTiming, MockTracker, MockSt
 				hitType : 'event', 
 				eventCategory : parts[0], 
 				eventLabel    : parts[1], 
-				useSalo : parts[1].indexOf('salo')==0 ? 1 : 0,
+				useSalo : parts[1].indexOf('salo')==0 ? true : false,
+				useBeacon: false,
 				hitCallback : hitCallback
 			}
 			var result = test.fakeEvents[eventCategoryLabel] = mockTracker.send(fakeEvent);

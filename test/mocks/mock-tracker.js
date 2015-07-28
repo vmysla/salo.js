@@ -4,7 +4,6 @@ function MockTracker(timing){
 
 	var tracker = this;
 
-
 	tracker.debug = false;
 	tracker.data = {};
 	tracker.enabled  = true;
@@ -44,15 +43,15 @@ function MockTracker(timing){
 
 	tracker.data['sendHitTask'] = 
 	tracker.sendHitTask = function(hit){
-		var pl = hit.get('hitPayload');
-		if(tracker.debug) console.log('tracker.sendHitTask', pl, tracker.will_succeed[pl], tracker.was_sent[pl] );
+		var pl = hit.get('hitPayload').replace(/&qt=.*$/ig,'');
+		if(tracker.debug) console.log('tracker.sendHitTask', pl, tracker.will_succeed[pl], tracker.was_sent[pl], hit.get('hitCallback').toString() );
 		
 		if(tracker.will_succeed[pl]){
 			tracker.succeded.push(pl.replace(/event=/ig,''));
 			var cb = hit.get('hitCallback');
 			if(cb) cb();
 		} else {
-			tracker.was_sent[pl] = hit;
+			tracker.was_sent[pl] = hit.get('hitCallback');
 		}
 	};
 
@@ -80,13 +79,15 @@ function MockTracker(timing){
 
 		return {
 			deliver : function(){ 
+				if(tracker.debug) console.log(tracker.will_succeed);
+				if(tracker.debug) console.log(tracker.was_sent);
 				if(tracker.debug) console.log('tracker.deliver', data.hitPayload, tracker.will_succeed[data.hitPayload], tracker.was_sent[data.hitPayload] );
 				if(tracker.was_sent[data.hitPayload]){
 					tracker.succeded.push(data.hitPayload.replace(/event=/ig,''));
-					var cb = tracker.was_sent[data.hitPayload].get('hitCallback');
+					var cb = tracker.was_sent[data.hitPayload];
 					if(cb) cb();
 				} else {
-					tracker.will_succeed[data.hitPayload]=hit;
+					tracker.will_succeed[data.hitPayload]=true;
 				}
 			}
 		}
