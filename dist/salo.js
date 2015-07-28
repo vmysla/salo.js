@@ -23,92 +23,140 @@ function salo(tracker, options){
 		'transport'		: UNDEFINED 
 	}];
 
-	var inbox  = 0;
-	var outbox = 0;
+	var inbox, outbox;
 
 	options = options || {};
 
 	var storageTimeout   = options['storageTimeout']   || TIME_3_HOURS;
 	var transportTimeout = options['transportTimeout'] || TIME_5_SECONDS;
 
-	var transportMethod  = options['transportMethod']  || 'image';
-	var transportUrl     = options['transportUrl']     || '//www.google-analytics.com/collect';
-
 	var timing    = options['timing']       || window;
 	var storage   = options['storage']      || window['simpleStorage'];
-	var transport = tracker.get('sendHitTask');
+	
+	var gaBuildHit = tracker.get('buildHitTask');
+	var gaSendHit  = tracker.get('sendHitTask');
+
+	var saloBuildHit = safe(build);
+	var saloSendHit  = safe(send);
 
 	enable();
-
 
 	function watch(pattern){ 
 		patterns.push(pattern);
 	}
 	
-	function enable(fn){ 
-		tracker.set('sendHitTask', fn || send);
+	function enable(fn){
+
+	  	inbox  = 0;
+	  	outbox = 0;
+
+		tracker.set('buildHitTask', saloBuildHit );
+		tracker.set('sendHitTask', saloSendHit );		
 	}
 
-	function disable(error, fn){
-		enable(transport);
-		return error 
-			&& tracker.send('exception', {
-	        	'exDescription': 'salo.js - ' + fn + ':' + error.message, 
+	function disable(error){
+
+		tracker.set('buildHitTask', gaBuildHit );
+		tracker.set('sendHitTask', saloSendHit );
+
+		if(error) {
+			tracker.send('exception', {
+	        	'exDescription' : '[salo.js]' + ' ' + error.message, 
 	        	'nonInteraction': true,
-	        	'exFatal': false
+	        	'exFatal'       : false
 	    	});
+		}
 	}
 
-	function onSend(hit, savedId){
+	function build(hit){
 
-		if(!savedId) {
-			inbox++;
-			savedId = canSave(hit) && save(hit);
+		if( hit.get('hitType') != 'salo' ){
+
+			gaBuildHit(hit);
+		} 
+		else {
+
+			var saloId, hitStorageKey, hitPayload, hitDateTime, hitQueueTime;
+
+			if( saloId = /^salo(\d+)$/i.exec( hit.get('saloId') ) ){
+				hitStorageKey = saloId[0];
+				hitDateTime   = saloId[1];
+				hitPayload    = storage.get( storageKey );
+				hitQueueTime  = currentTime() - hitDateTime;
+				hit.set('hitPayload', hitPayload + '&qt=' + hitQueueTime);
+				saloSendHit(hit, hitStorageKey);
+			}
+		}		
+	}
+
+
+	function send(hit, hitStorageKey){
+
+		if(!hitStorageKey){
+
+			hitStorageKey = trySaveHitToStorage(hit);
+			inbox++;	
 		}
 
-		if( !savedId || (!outbox && lock(savedId)) ){
+		if( !hitStorageKey || !outbox && tryLockHitFromStorage(hitStorageKey) ){
 
-			var timeout = timing.setTimeout(function(){
-				timeout = timeout && onDone(false);
-			}, transportTimeout);
+			var timeoutId = timing.setTimeout(onTransportTimeout, transportTimeout);
+			var onHitCallback = hit.get('hitCallback') || NOP;
+			var isTransportTimeoutOrCompleted = false;
 
-			var onSuccess = hit.get('hitCallback') || NOP;
-			
-			hit.set('hitCallback', function hitCallback(){
-				try {
-					if(timeout) timeout = timing.clearTimeout(timeout);
-					if(savedId) remove(savedId);
-					if(onSuccess) {
-						onDone(true);
-						onSuccess();	
-					}
-				} catch(e) {
-					disable(e, hitCallback);
-				}
-				onSuccess = UNDEFINED;
-			}, true); // for this hit only
+			hit.set('hitCallback', onTransportCompleted, true);
 
 			inbox--;
 			outbox++;
-			transport(hit);
+			gaSendHit(hit);
+			
+			
+			function onTransportTimeout(){
+
+				if(!isTransportTimeoutOrCompleted){
+
+					timeoutId = timing.setTimeout(tryLoadNextHitFromStorage, transportTimeout);
+					isTransportTimeoutOrCompleted = true;
+					outbox--;
+				}
+			}
+
+			function onTransportCompleted(){
+
+				if(timeoutId) {
+
+					timing.clearTimeout(timeoutId);
+				}
+
+				if(hitStorageKey) {
+
+					removeHitFromStorage(hitStorageKey);
+				}
+
+				if(!isTransportTimeoutOrCompleted){
+
+					isTransportTimeoutOrCompleted = true;
+					outbox--;
+				}
+
+				if(onHitCallback) {
+
+					try { 
+						onHitCallback(); 	
+					} catch(e){
+						// ignored
+					};
+
+					onHitCallback = UNDEFINED;
+				}
+
+				tryLoadNextHitFromStorage();
+			}
+				
 		}
 	}
 
-	function onDone(success){
-		outbox--;
-		return success && load()
-			|| timing.setTimeout(load, transportTimeout);
-	}
-
-	function send(hit, savedId){
-		try {
-			onSend(hit, savedId);
-		} catch(e) {
-			disable(e, send);
-		}
-	}
-
-	function canSave(hit){
+	function testIfHitShouldBeSaved(hit){
 
 		var pattern;
 		var matched = false;
@@ -127,17 +175,24 @@ function salo(tracker, options){
 			}
 		}
 
-		return matched && pattern;
+		return matched;
 	}
 
-	function save(hit){
-		var savedId = 'hit' + currentTime();
-		var payload = hit.get('hitPayload');
-		var saved = storage.set(savedId, payload, ttl(storageTimeout) );
-		return saved && savedId;
+	function trySaveHitToStorage(hit){
+
+		if( testIfHitShouldBeSaved(hit) ) {
+
+			var hitStorageKey = 'salo' + currentTime();
+			var hitPayload    = hit.get('hitPayload');
+			return storage.set(hitStorageKey, hitPayload, ttl(storageTimeout) ) 
+				&& hitStorageKey;
+		}
+
+		return false;
 	}
 
-	function load(){
+
+	function tryLoadNextHitFromStorage(){
 
 		if(outbox>0) return;
 
@@ -147,45 +202,36 @@ function salo(tracker, options){
 		while(offset<keys.length){
 
 			var key = keys[offset++];
-			var match = key.match(/^hit(\d+)$/);
+			var match = key.match(/^salo(\d+)$/);
 
 			if(match) {
-
+				var match = key.match(/^salo(\d+)$/);
 				var creationTime = parseInt(match[1], 10);
 				var queueTime = currentTime() - creationTime;
 
-				var savedId = key;
-				var payload = storage.get(savedId);
+				var saloId  = key;
 
-				var hit = model({
-					'transport'	   : transportMethod,
-					'transportUrl' : transportUrl,
-					'hitPayload'   : payload + '&qt=' + queueTime
+				var loaded = tracker.send({
+						'hitType'      : 'salo',
+						'saloId'       : saloId,
+						'queueTime'    : queueTime //queueTime
 				});
 
-				send(hit, savedId);
-				continue;
-			}	
+				if(loaded) return true;
+			}
 		}	
 	}
 
-	function lock(savedId){
-		var lockId = savedId + 'lock';
+	function tryLockHitFromStorage(saloId){
+		var lockId = saloId + 'lock';
 		if(storage.get(lockId)) return false;
 		storage.set(lockId, 1, ttl(transportTimeout) );
 		return true;
 	}
 
-	function remove(savedId){
-		storage.deleteKey(savedId);
-		storage.deleteKey(savedId + 'lock');
-	}
-
-	function model(data){
-		return {
-			'get'  : function(attr){ return data[attr]; },
-			'set'  : function(attr, value){ data[attr] = value; }
-		}
+	function removeHitFromStorage(saloId){
+		storage.deleteKey(saloId);
+		storage.deleteKey(saloId + 'lock');
 	}
 
 	function currentTime(){
@@ -197,6 +243,25 @@ function salo(tracker, options){
 		return { TTL : time };
 	}
 
+
+
+	function safe(fn){
+
+		function proxy(arg0, arg1){
+
+			try { 
+
+				fn(arg0, arg1); 
+			} 
+			catch(e) { 
+
+				disable(e); 
+			}
+		}
+		
+		return proxy;
+	}
+	
 	return api;
 }
 
